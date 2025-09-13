@@ -32,8 +32,32 @@ const localStorage = {
 
 function findLatestLogFile() {
   const homedir = require("os").homedir();
-  const logDir = path.join(homedir, "Library", "Logs", "Roblox");
+  const os = require("os");
+  let logDir;
+  
+  // Determine log directory based on operating system
+  switch (os.platform()) {
+    case 'darwin': // macOS
+      logDir = path.join(homedir, "Library", "Logs", "Roblox");
+      break;
+    case 'win32': // Windows
+      logDir = path.join(homedir, "AppData", "Local", "Roblox", "logs");
+      break;
+    case 'linux': // Linux
+      logDir = path.join(homedir, ".local", "share", "Roblox", "logs");
+      break;
+    default:
+      console.log(`Unsupported platform: ${os.platform()}`);
+      return null;
+  }
+  
   try {
+    // Check if directory exists before trying to read it
+    if (!fs.existsSync(logDir)) {
+      console.log(`Roblox log directory not found: ${logDir}`);
+      return null;
+    }
+    
     const files = fs
       .readdirSync(logDir)
       .filter((file) => file.endsWith(".log"))
@@ -45,7 +69,7 @@ function findLatestLogFile() {
 
     return files.length > 0 ? files[0].path : null;
   } catch (err) {
-    console.error("Error finding log files:", err);
+    console.log(`Roblox log directory not accessible: ${logDir}`);
     return null;
   }
 }
