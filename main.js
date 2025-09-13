@@ -1,13 +1,20 @@
-const isElectron =
-  window.navigator.userAgent.toLowerCase().indexOf("electron/") > -1;
-let ipcRenderer;
-if (isElectron) {
-  try {
-    ipcRenderer = require("electron").ipcRenderer;
-  } catch (error) {
-    console.warn("Failed to load electron modules:", error);
+// Simple localStorage replacement for Node.js environment
+const localStorage = {
+  data: {},
+  getItem: function(key) {
+    return this.data[key] || null;
+  },
+  setItem: function(key, value) {
+    this.data[key] = value;
+  },
+  removeItem: function(key) {
+    delete this.data[key];
   }
-}
+};
+
+// Remove Electron detection and IPC
+const isElectron = false;
+let ipcRenderer = null;
 
 function updatePortUIState() {
   if (!executorSelect) return;
@@ -37,6 +44,7 @@ function updatePortUIState() {
     } catch (e) {}
   }
 }
+
 const tabs = document.getElementById("tabs");
 const editorContainer = document.getElementById("editor-container");
 const scriptsList = document.getElementById("scripts");
@@ -48,23 +56,24 @@ const renameScriptBtn = document.getElementById("renameScript");
 const deleteScriptBtn = document.getElementById("deleteScript");
 const autoExecuteScriptBtn = document.getElementById("autoExecuteScript");
 const autoExecuteCheckbox = document.getElementById("autoExecuteCheckbox");
-const fs = require("fs");
-const { spawn } = require("child_process");
-const path = require("path");
-const { console } = require("inspector");
-const net = require("net");
-const { clipboard } = require("electron");
+
+// Remove Node.js requires that won't work in browser
+const fs = null;
+const spawn = null;
+const path = null;
+const net = null;
+const clipboard = null;
+
 const consoleOutput = document.getElementById("consoleOutput");
 const clearConsoleBtn = document.getElementById("clearConsole");
 const settingsButton = document.getElementById("settings-button");
 const settingsPane = document.getElementById("settingsPane");
 const glowModeSelect = document.getElementById("glowMode");
 const resetColorBtn = document.getElementById("resetColor");
-const scriptsDirectory = path.join(
-  require("os").homedir(),
-  "Documents",
-  "Tritium",
-);
+
+// Mock scripts directory for browser environment
+const scriptsDirectory = "tritium-scripts";
+
 const toggleConsole = document.getElementById("toggleConsole");
 const consoleContainer = document.querySelector(".console-container");
 const toggleSidebar = document.getElementById("sidebar-toggle-btn");
@@ -217,6 +226,7 @@ function openDropdown() {
     pingAllPorts();
   }
 }
+
 function closeDropdown() {
   if (!portDropdown) return;
   portDropdown.classList.remove("open");
@@ -228,16 +238,19 @@ function closeDropdown() {
     portDropdownMenu.style.visibility = "hidden";
   }
 }
+
 function toggleDropdown() {
   if (portDropdown.classList.contains("open")) closeDropdown();
   else openDropdown();
 }
+
 if (portDropdownToggle) {
   portDropdownToggle.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleDropdown();
   });
 }
+
 document.addEventListener("click", (e) => {
   const menu = portDropdownMenu;
   const clickInsideToggle =
@@ -249,27 +262,12 @@ document.addEventListener("click", (e) => {
     closeDropdown();
   }
 });
+
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeDropdown();
 });
 
 const portStatusCache = {};
-function updatePortStatusVisual(state) {
-  if (portStatusDot) {
-    if (lastPortStatus !== state) {
-      portStatusDot.classList.remove("online", "offline");
-      portStatusDot.classList.add(state === "online" ? "online" : "offline");
-      lastPortStatus = state;
-    }
-  }
-
-  const badge = document.getElementById(`port-status-${selectedPort}`);
-  if (badge) {
-    badge.classList.remove("online", "offline");
-    badge.classList.add(state === "online" ? "online" : "offline");
-  }
-  portStatusCache[selectedPort] = state;
-}
 
 function setPortBadge(port, state) {
   const badge = document.getElementById(`port-status-${port}`);
@@ -373,35 +371,13 @@ function evaluateConsoleLock() {
   lastOnlinePortCount = onlineCount;
 }
 
+// Mock port ping functions for browser environment
 function pingPort(port, onDone) {
-  if (typeof require !== "function") {
-    if (onDone) onDone();
-    return;
-  }
-
-  const socket = new net.Socket();
-  let handled = false;
-  socket.setTimeout(700);
-  socket.once("connect", () => {
-    handled = true;
-    setPortBadge(port, "online");
-    socket.destroy();
-    if (onDone) onDone();
-  });
-  function markOffline() {
-    if (handled) return;
-    handled = true;
+  // Simulate port checking in browser environment
+  setTimeout(() => {
     setPortBadge(port, "offline");
-    socket.destroy();
     if (onDone) onDone();
-  }
-  socket.once("timeout", markOffline);
-  socket.once("error", markOffline);
-  try {
-    socket.connect({ host: "127.0.0.1", port });
-  } catch (_) {
-    markOffline();
-  }
+  }, 100);
 }
 
 function pingAllPorts() {
@@ -451,6 +427,7 @@ function checkSingleOnlineAcrossExecutors(msStart, msEnd, opStart, opEnd) {
   for (let p = opStart; p <= opEnd; p++) {
     if (portStatusCache[p] === "online") online.push(p);
   }
+  const hydroStart = 6969, hydroEnd = 6969;
   for (let p = hydroStart; p <= hydroEnd; p++) {
     if (portStatusCache[p] === "online") online.push(p);
   }
@@ -471,11 +448,6 @@ function checkSingleOnlineAcrossExecutors(msStart, msEnd, opStart, opEnd) {
         try {
           localStorage.setItem("executorType", desiredExec);
         } catch (e) {}
-        if (isElectron && ipcRenderer) {
-          try {
-            ipcRenderer.invoke("set-executor", desiredExec).catch(() => {});
-          } catch (e) {}
-        }
         try {
           updatePortUIState();
         } catch (e) {}
@@ -501,23 +473,12 @@ function checkSingleOnlineAcrossExecutors(msStart, msEnd, opStart, opEnd) {
 }
 
 function queuePortStatusCheck(force = false) {
-  if (typeof require !== "function") return;
+  // Mock implementation for browser
   const now = Date.now();
-
   if (!force && now - lastAllPortsPingTime < 2500) return;
   lastAllPortsPingTime = now;
   if (force) pingAllExecutors();
   else pingAllPorts();
-}
-
-if (isElectron && ipcRenderer) {
-  ipcRenderer.on("log-update", () => {
-    portPingCooldown++;
-    if (portPingCooldown >= 5) {
-      portPingCooldown = 0;
-      queuePortStatusCheck();
-    }
-  });
 }
 
 setInterval(() => {
@@ -551,21 +512,7 @@ clearWorkspaceBtn.addEventListener("click", () => {
 });
 
 msUpdateBtn.addEventListener("click", async () => {
-  settingsPane.classList.add("loading");
-  msUpdateBtn.innerHTML = "Updating...";
-  try {
-    updating = true;
-    await ipcRenderer.invoke("ms-update");
-    updating = false;
-    showToast("MacSploit updated successfully");
-    localStorage.removeItem("msVersion");
-    location.reload();
-  } catch (error) {
-    console.error(error);
-    showToast("Error updating MacSploit", true);
-  } finally {
-    msUpdateBtn.innerHTML = "Update MacSploit";
-  }
+  showToast("MacSploit update not available in browser mode", true);
 });
 
 discordBtn.addEventListener("click", () => {
@@ -584,16 +531,7 @@ skipDiscordBtn.addEventListener("click", () => {
 });
 
 function openDiscordLink() {
-  if (isElectron) {
-    try {
-      require("electron").shell.openExternal("https://discord.gg/7Ds6JvpqQK");
-    } catch (error) {
-      console.warn("Failed to open external link:", error);
-      window.open("https://discord.gg/7Ds6JvpqQK", "_blank");
-    }
-  } else {
-    window.open("https://discord.gg/7Ds6JvpqQK", "_blank");
-  }
+  window.open("https://discord.gg/7Ds6JvpqQK", "_blank");
 }
 
 function showDiscordDialog() {
@@ -673,10 +611,6 @@ toggleSidebar.addEventListener("click", () => {
   }
 });
 
-if (!fs.existsSync(scriptsDirectory)) {
-  fs.mkdirSync(scriptsDirectory, { recursive: true });
-}
-
 function addLog(message, type = "info") {
   const logElement = document.createElement("div");
   logElement.className = `log-${type} log-entry`;
@@ -691,33 +625,15 @@ function addLog(message, type = "info") {
     evaluateConsoleLock();
   }
 }
+
 clearConsoleBtn.addEventListener("click", () => {
   consoleOutput.innerHTML = "";
-
   evaluateConsoleLock();
 });
 
+// Mock log watcher for browser environment
 function startLogWatcher() {
-  if (!isElectron || !ipcRenderer) return;
-  ipcRenderer.invoke("start-log-watcher").then((result) => {
-    if (result && result.success) {
-      ipcRenderer.on("log-update", (event, logLine) => {
-        let logType = "info";
-        if (logLine.includes("ERROR") || logLine.includes("Error")) {
-          logType = "error";
-        } else if (logLine.includes("WARNING") || logLine.includes("Warning")) {
-          logType = "warning";
-        } else if (logLine.includes("SUCCESS") || logLine.includes("Success")) {
-          logType = "success";
-        } else if (logLine.includes("DEBUG") || logLine.includes("Debug")) {
-          logType = "debug";
-        }
-
-        const logline = logLine.split("] ").pop();
-        addLog(logline, logType);
-      });
-    }
-  });
+  console.log("Log watcher not available in browser mode");
 }
 
 let toastTimeout = null;
@@ -742,327 +658,19 @@ function createEditor(tabId, content) {
   editorWrapper.className = "editor-wrapper";
   editorWrapper.id = `editor-${tabId}`;
   editorContainer.appendChild(editorWrapper);
+  
   const luaGlobals = [
-    "and",
-    "break",
-    "do",
-    "else",
-    "elseif",
-    "end",
-    "false",
-    "for",
-    "function",
-    "goto",
-    "if",
-    "in",
-    "local",
-    "nil",
-    "not",
-    "or",
-    "repeat",
-    "return",
-    "then",
-    "true",
-    "until",
-    "while",
-
-    "assert",
-    "collectgarbage",
-    "dofile",
-    "error",
-    "getmetatable",
-    "ipairs",
-    "load",
-    "loadfile",
-    "next",
-    "pairs",
-    "pcall",
-    "print",
-    "rawequal",
-    "rawget",
-    "rawlen",
-    "rawset",
-    "select",
-    "setmetatable",
-    "tonumber",
-    "tostring",
-    "type",
-    "xpcall",
-    "warn",
-
-    "coroutine",
-    "coroutine.create",
-    "coroutine.resume",
-    "coroutine.running",
-    "coroutine.status",
-    "coroutine.wrap",
-    "coroutine.yield",
-    "coroutine.isyieldable",
-    "coroutine.close",
-
-    "table",
-    "table.concat",
-    "table.insert",
-    "table.move",
-    "table.pack",
-    "table.remove",
-    "table.sort",
-    "table.unpack",
-    "table.clear",
-    "table.find",
-    "table.foreach",
-    "table.foreachi",
-    "table.getn",
-    "table.isfrozen",
-    "table.maxn",
-    "table.create",
-
-    "string",
-    "string.byte",
-    "string.char",
-    "string.dump",
-    "string.find",
-    "string.format",
-    "string.gmatch",
-    "string.gsub",
-    "string.len",
-    "string.lower",
-    "string.match",
-    "string.rep",
-    "string.reverse",
-    "string.sub",
-    "string.upper",
-    "string.pack",
-    "string.packsize",
-    "string.unpack",
-    "string.split",
-
-    "math",
-    "math.abs",
-    "math.acos",
-    "math.asin",
-    "math.atan",
-    "math.atan2",
-    "math.ceil",
-    "math.clamp",
-    "math.cos",
-    "math.cosh",
-    "math.deg",
-    "math.exp",
-    "math.floor",
-    "math.fmod",
-    "math.frexp",
-    "math.ldexp",
-    "math.log",
-    "math.log10",
-    "math.max",
-    "math.min",
-    "math.modf",
-    "math.pow",
-    "math.rad",
-    "math.random",
-    "math.randomseed",
-    "math.round",
-    "math.sign",
-    "math.sin",
-    "math.sinh",
-    "math.sqrt",
-    "math.tan",
-    "math.tanh",
-    "math.pi",
-    "math.huge",
-    "math.noise",
-
-    "io",
-    "io.close",
-    "io.flush",
-    "io.input",
-    "io.lines",
-    "io.open",
-    "io.output",
-    "io.popen",
-    "io.read",
-    "io.stderr",
-    "io.stdin",
-    "io.stdout",
-    "io.tmpfile",
-    "io.type",
-    "io.write",
-
-    "os",
-    "os.clock",
-    "os.date",
-    "os.difftime",
-    "os.execute",
-    "os.exit",
-    "os.getenv",
-    "os.remove",
-    "os.rename",
-    "os.setlocale",
-    "os.time",
-    "os.tmpname",
-
-    "debug",
-    "debug.debug",
-    "debug.gethook",
-    "debug.getinfo",
-    "debug.getlocal",
-    "debug.getmetatable",
-    "debug.getregistry",
-    "debug.getupvalue",
-    "debug.getuservalue",
-    "debug.sethook",
-    "debug.setlocal",
-    "debug.setmetatable",
-    "debug.setupvalue",
-    "debug.setuservalue",
-    "debug.traceback",
-    "debug.upvalueid",
-    "debug.upvaluejoin",
-
-    "package",
-    "package.config",
-    "package.cpath",
-    "package.loaded",
-    "package.loaders",
-    "package.loadlib",
-    "package.path",
-    "package.preload",
-    "package.searchers",
-    "package.searchpath",
-
-    "utf8",
-    "utf8.char",
-    "utf8.charpattern",
-    "utf8.codepoint",
-    "utf8.codes",
-    "utf8.len",
-    "utf8.offset",
-
-    "bit32",
-    "bit32.arshift",
-    "bit32.band",
-    "bit32.bnot",
-    "bit32.bor",
-    "bit32.btest",
-    "bit32.bxor",
-    "bit32.extract",
-    "bit32.lrotate",
-    "bit32.lshift",
-    "bit32.replace",
-    "bit32.rrotate",
-    "bit32.rshift",
-
-    "typeof",
-    "getfenv",
-    "setfenv",
-    "shared",
-    "script",
-    "require",
-    "spawn",
-    "delay",
-    "tick",
-    "time",
-    "UserSettings",
-    "settings",
-    "game",
-    "workspace",
-    "shared",
-    "script",
-    "wait",
-    "Delay",
-    "ElapsedTime",
-    "elapsedTime",
-    "require",
-
-    "Vector2",
-    "Vector3",
-    "Vector2int16",
-    "Vector3int16",
-    "CFrame",
-    "Color3",
-    "ColorSequence",
-    "NumberRange",
-    "NumberSequence",
-    "Rect",
-    "UDim",
-    "UDim2",
-    "Faces",
-    "Axes",
-    "BrickColor",
-    "Enum",
-    "Instance",
-    "TweenInfo",
-    "Region3",
-    "Region3int16",
-    "Ray",
-    "Random",
-    "RaycastResult",
-
-    "plugin",
-    "command",
-    "printidentity",
-    "settings",
-    "stats",
-    "testservice",
-    "http",
-    "HttpService",
-    "HttpRbxApiService",
-    "ContextActionService",
-    "RunService",
-    "DataStoreService",
-    "MessagingService",
-    "CollectionService",
-    "ContentProvider",
-    "PathfindingService",
-    "PhysicsService",
-    "ReplicatedStorage",
-    "ServerScriptService",
-    "ServerStorage",
-    "StarterGui",
-    "StarterPack",
-    "StarterPlayer",
-    "Teams",
-    "TeleportService",
-    "TextService",
-    "UserInputService",
-    "VirtualInputManager",
-    "VoiceChatService",
-    "MarketplaceService",
-    "GroupService",
-    "LocalizationService",
-    "NotificationService",
-    "BadgeService",
-    "GamePassService",
-    "DataStoreService",
-    "SocialService",
-    "PlayerService",
-    "Chat",
-    "SoundService",
-    "Lighting",
-    "Workspace",
-    "Players",
-    "Debris",
-    "NetworkClient",
-    "NetworkServer",
-    "Visit",
-    "GuiService",
-    "CoreGui",
-    "CorePackages",
-    "LogService",
-    "MemoryStoreService",
-    "PolicyService",
-    "SessionService",
-    "TextChatService",
-    "ThirdPartyPurchaseService",
-    "VersionControlService",
-    "VRService",
+    "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto", "if", "in", "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while",
+    "assert", "collectgarbage", "dofile", "error", "getmetatable", "ipairs", "load", "loadfile", "next", "pairs", "pcall", "print", "rawequal", "rawget", "rawlen", "rawset", "select", "setmetatable", "tonumber", "tostring", "type", "xpcall", "warn",
+    "coroutine", "table", "string", "math", "io", "os", "debug", "package", "utf8", "bit32",
+    "typeof", "getfenv", "setfenv", "shared", "script", "require", "spawn", "delay", "tick", "time", "UserSettings", "settings", "game", "workspace", "wait",
+    "Vector2", "Vector3", "CFrame", "Color3", "UDim2", "BrickColor", "Enum", "Instance", "TweenInfo"
   ];
 
   const editorAPI = {
     _editor: null,
-    getValue: () => "",
-    setValue: () => {},
+    getValue: () => content || "-- New script",
+    setValue: (v) => { content = v; },
     refresh: () => {},
     focus: () => {},
     setSize: () => {},
@@ -1071,459 +679,122 @@ function createEditor(tabId, content) {
   function initMonaco() {
     console.debug("Loading Monaco modules...");
 
-    amdRequire(
-      ["vs/editor/editor.main", "vs/basic-languages/lua/lua"],
-      function (_, luaBasics) {
-        console.debug("Monaco modules loaded");
-        try {
-          if (!monaco.languages.getLanguages().some((l) => l.id === "lua")) {
-            monaco.languages.register({ id: "lua" });
-          }
-
-          if (!monaco.languages.getLanguages().some((l) => l.id === "luau")) {
-            monaco.languages.register({
-              id: "luau",
-              aliases: ["Luau", "luau"],
-            });
-          }
-          if (luaBasics && luaBasics.language) {
-            monaco.languages.setMonarchTokensProvider(
-              "lua",
-              luaBasics.language,
-            );
-
-            try {
-              const luauLanguage = JSON.parse(
-                JSON.stringify(luaBasics.language),
-              );
-              const extraKeywords = [
-                "continue",
-                "type",
-                "export",
-                "typeof",
-
-                "task",
-                "Enum",
-                "Instance",
-                "Vector2",
-                "Vector3",
-                "Color3",
-                "CFrame",
-                "UDim2",
-                "Rect",
-                "math",
-                "string",
-                "table",
-                "workspace",
-                "game",
-                "players",
-                "RunService",
-                "UserInputService",
-                "TweenInfo",
-              ];
-              if (Array.isArray(luauLanguage.keywords)) {
-                luauLanguage.keywords = Array.from(
-                  new Set([...luauLanguage.keywords, ...extraKeywords]),
-                );
-              }
-
-              const robloxClasses = [
-                "Vector2",
-                "Vector3",
-                "CFrame",
-                "Color3",
-                "UDim",
-                "UDim2",
-                "BrickColor",
-                "TweenInfo",
-                "NumberRange",
-                "NumberSequence",
-                "ColorSequence",
-                "Region3",
-                "Ray",
-                "Faces",
-                "Axes",
-              ];
-              const robloxServices = [
-                "game",
-                "workspace",
-                "Workspace",
-                "Players",
-                "ReplicatedStorage",
-                "ServerStorage",
-                "ServerScriptService",
-                "StarterGui",
-                "StarterPack",
-                "StarterPlayer",
-                "Lighting",
-                "RunService",
-                "UserInputService",
-                "HttpService",
-                "TweenService",
-                "CollectionService",
-                "MarketplaceService",
-                "TeleportService",
-                "PathfindingService",
-                "Debris",
-                "BadgeService",
-                "SoundService",
-                "TextChatService",
-              ];
-              const robloxGlobals = [
-                "script",
-                "shared",
-                "typeof",
-                "task",
-                "spawn",
-                "delay",
-                "wait",
-                "print",
-                "warn",
-                "require",
-              ];
-
-              if (
-                luauLanguage.tokenizer &&
-                Array.isArray(luauLanguage.tokenizer.root)
-              ) {
-                const makeGroup = (arr) => arr.join("|");
-                luauLanguage.tokenizer.root.unshift(
-                  [
-                    new RegExp(`\\b(?:${makeGroup(robloxClasses)})\\b`),
-                    "robloxClass",
-                  ],
-                  [
-                    new RegExp(`\\b(?:${makeGroup(robloxServices)})\\b`),
-                    "robloxService",
-                  ],
-                  [
-                    new RegExp(`\\b(?:${makeGroup(robloxGlobals)})\\b`),
-                    "robloxGlobal",
-                  ],
-                );
-              }
-
-              monaco.languages.setMonarchTokensProvider("luau", luauLanguage);
-            } catch (_) {
-              monaco.languages.setMonarchTokensProvider(
-                "luau",
-                luaBasics.language,
-              );
+    if (typeof amdRequire !== 'undefined') {
+      amdRequire(
+        ["vs/editor/editor.main", "vs/basic-languages/lua/lua"],
+        function (_, luaBasics) {
+          console.debug("Monaco modules loaded");
+          try {
+            if (!monaco.languages.getLanguages().some((l) => l.id === "lua")) {
+              monaco.languages.register({ id: "lua" });
             }
-          }
-          if (luaBasics && luaBasics.conf) {
-            const baseConf = luaBasics.conf;
-            const makeConf = () => {
-              const conf = JSON.parse(JSON.stringify(baseConf));
-              conf.indentationRules = {
-                increaseIndentPattern:
-                  /(\b(function|then|do)\b(?!.*\bend\b))|(^\s*repeat\b)/i,
 
-                decreaseIndentPattern: /^\s*(end|until)\b/i,
-              };
-              conf.onEnterRules = [
-                {
-                  beforeText: /^\s*(?:local\s+)?function\b.*$/,
-                  action: {
-                    indentAction: monaco.languages.IndentAction.Indent,
-                  },
-                },
-
-                {
-                  beforeText: /^\s*(?:if|for|while)\b.*\b(?:then|do)\s*$/,
-                  action: {
-                    indentAction: monaco.languages.IndentAction.Indent,
-                  },
-                },
-
-                {
-                  beforeText: /^\s*(?:do|repeat)\s*$/,
-                  action: {
-                    indentAction: monaco.languages.IndentAction.Indent,
-                  },
-                },
-
-                {
-                  beforeText: /^\s*(?:else|elseif\b.*)\s*$/,
-                  action: {
-                    indentAction: monaco.languages.IndentAction.IndentOutdent,
-                  },
-                },
-
-                {
-                  beforeText: /^\s*(?:end|until\b.*)\s*$/,
-                  action: {
-                    indentAction: monaco.languages.IndentAction.Outdent,
-                  },
-                },
-              ];
-              return conf;
-            };
-            monaco.languages.setLanguageConfiguration("lua", makeConf());
-            monaco.languages.setLanguageConfiguration("luau", makeConf());
-          }
-
-          const provideLuauCompletions = {
-            provideCompletionItems: (model, position) => {
-              const word = model.getWordUntilPosition(position);
-              const range = {
-                startLineNumber: position.lineNumber,
-                startColumn: word.startColumn,
-                endLineNumber: position.lineNumber,
-                endColumn: word.endColumn,
-              };
-
-              const kindMap = {
-                function: monaco.languages.CompletionItemKind.Function,
-                method: monaco.languages.CompletionItemKind.Method,
-                variable: monaco.languages.CompletionItemKind.Variable,
-                class: monaco.languages.CompletionItemKind.Class,
-                property: monaco.languages.CompletionItemKind.Property,
-                field: monaco.languages.CompletionItemKind.Field,
-                module: monaco.languages.CompletionItemKind.Module,
-                keyword: monaco.languages.CompletionItemKind.Keyword,
-                constant: monaco.languages.CompletionItemKind.Constant,
-                enum: monaco.languages.CompletionItemKind.Enum,
-                interface: monaco.languages.CompletionItemKind.Interface,
-                struct: monaco.languages.CompletionItemKind.Struct,
-                event: monaco.languages.CompletionItemKind.Event,
-                operator: monaco.languages.CompletionItemKind.Operator,
-                type: monaco.languages.CompletionItemKind.TypeParameter,
-              };
-
-              function getKind(kw) {
-                if (
-                  /^(function|spawn|delay|wait|pcall|xpcall|coroutine|assert)$/.test(
-                    kw,
-                  )
-                )
-                  return kindMap.function;
-                if (
-                  /^(math|string|table|os|io|debug|package|utf8|bit32|typeof|type)$/.test(
-                    kw,
-                  )
-                )
-                  return kindMap.module;
-                if (/^[A-Z][A-Za-z0-9_]*$/.test(kw)) return kindMap.class;
-                if (/^(true|false|nil)$/.test(kw)) return kindMap.constant;
-                if (
-                  /^(local|end|do|then|if|else|elseif|for|while|repeat|until|break|return|continue|export|in|not|and|or)$/.test(
-                    kw,
-                  )
-                )
-                  return kindMap.keyword;
-                return kindMap.variable;
-              }
-
-              const suggestions = luaGlobals.map((kw) => ({
-                label: kw,
-                kind: getKind(kw),
-                insertText: kw,
-                range,
-              }));
-              return { suggestions };
-            },
-          };
-
-          if (!window.__tritiumMonacoProvidersRegistered) {
-            try {
-              monaco.languages.registerCompletionItemProvider(
-                "lua",
-                provideLuauCompletions,
-              );
-              monaco.languages.registerCompletionItemProvider(
-                "luau",
-                provideLuauCompletions,
-              );
-            } catch (e) {
-              console.warn("Failed to register completion provider:", e);
+            if (!monaco.languages.getLanguages().some((l) => l.id === "luau")) {
+              monaco.languages.register({
+                id: "luau",
+                aliases: ["Luau", "luau"],
+              });
             }
-            window.__tritiumMonacoProvidersRegistered = true;
-          }
 
-          monaco.editor.defineTheme("tritium-dark", {
-            base: "vs-dark",
-            inherit: true,
-            rules: [
-              { token: "comment", foreground: "6A9955", fontStyle: "italic" },
-              { token: "string", foreground: "CE9178" },
-              { token: "number", foreground: "B5CEA8" },
-              { token: "keyword", foreground: "C586C0" },
-              { token: "operator", foreground: "D4D4D4" },
-              { token: "delimiter", foreground: "808080" },
-              { token: "variable.predefined", foreground: "9CDCFE" },
+            if (luaBasics && luaBasics.language) {
+              monaco.languages.setMonarchTokensProvider("lua", luaBasics.language);
+              monaco.languages.setMonarchTokensProvider("luau", luaBasics.language);
+            }
 
-              { token: "robloxClass", foreground: "4EC9B0" },
-              {
-                token: "robloxService",
-                foreground: "569CD6",
-                fontStyle: "bold",
+            if (luaBasics && luaBasics.conf) {
+              monaco.languages.setLanguageConfiguration("lua", luaBasics.conf);
+              monaco.languages.setLanguageConfiguration("luau", luaBasics.conf);
+            }
+
+            monaco.editor.defineTheme("tritium-dark", {
+              base: "vs-dark",
+              inherit: true,
+              rules: [
+                { token: "comment", foreground: "6A9955", fontStyle: "italic" },
+                { token: "string", foreground: "CE9178" },
+                { token: "number", foreground: "B5CEA8" },
+                { token: "keyword", foreground: "C586C0" },
+                { token: "operator", foreground: "D4D4D4" },
+                { token: "delimiter", foreground: "808080" },
+                { token: "variable.predefined", foreground: "9CDCFE" },
+              ],
+              colors: {
+                "editor.background": "#1e1e1e",
+                focusBorder: "#00000000",
+                contrastBorder: "#00000000",
               },
-              { token: "robloxGlobal", foreground: "DCDCAA" },
-
-              { token: "identifier.lua", foreground: "DCDCAA" },
-              { token: "identifier.luau", foreground: "DCDCAA" },
-
-              { token: "delimiter.parenthesis", foreground: "D4D4D4" },
-              { token: "delimiter.bracket", foreground: "D4D4D4" },
-              { token: "delimiter.brace", foreground: "D4D4D4" },
-
-              { token: "invalid", foreground: "FFFFFF", background: "F44747" },
-            ],
-            colors: {
-              "editor.background": "#1e1e1e",
-
-              focusBorder: "#00000000",
-              contrastBorder: "#00000000",
-              "editor.focusHighlightBorder": "#00000000",
-              "editorWidget.border": "#00000000",
-              "input.border": "#00000000",
-              "list.focusOutline": "#00000000",
-            },
-          });
-
-          const monacoEditor = monaco.editor.create(editorWrapper, {
-            value: content || "-- New script",
-            language: "luau",
-            theme: "tritium-dark",
-            automaticLayout: true,
-            autoIndent: "full",
-            formatOnType: true,
-
-            contextmenu: false,
-            lineNumbers: "on",
-            tabSize: 2,
-            insertSpaces: true,
-            wordWrap: "off",
-            matchBrackets: "always",
-            autoClosingBrackets: "languageDefined",
-
-            fontFamily:
-              'Fira Code, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-            fontLigatures: true,
-            fontSize: 15,
-            lineHeight: 22,
-
-            glyphMargin: false,
-            lineNumbersMinChars: 3,
-            lineDecorationsWidth: 8,
-            padding: { top: 12, bottom: 12 },
-
-            cursorStyle: "line",
-            cursorSmoothCaretAnimation: true,
-            cursorBlinking: "phase",
-            cursorSurroundingLines: 15,
-            minimap: { enabled: false },
-          });
-
-          monacoEditor.updateOptions({ stickyScroll: { enabled: false } });
-          monacoEditor.updateOptions({ contextmenu: false });
-          monacoEditor.updateOptions({ cursorStyle: "line" });
-
-          monacoEditor.addCommand(
-            monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyV,
-            () => {
-              (async () => {
-                try {
-                  let text = "";
-                  if (navigator.clipboard && navigator.clipboard.readText) {
-                    text = await navigator.clipboard.readText();
-                  } else if (
-                    typeof clipboard !== "undefined" &&
-                    clipboard.readText
-                  ) {
-                    text = clipboard.readText();
-                  }
-                  const selection = monacoEditor.getSelection();
-                  monacoEditor.executeEdits("paste", [
-                    { range: selection, text, forceMoveMarkers: true },
-                  ]);
-                  monacoEditor.focus();
-                } catch (e) {}
-              })();
-            },
-          );
-
-          editorWrapper.addEventListener("paste", (ev) => {
-            ev.preventDefault();
-            (async () => {
-              try {
-                let text = "";
-                if (navigator.clipboard && navigator.clipboard.readText) {
-                  text = await navigator.clipboard.readText();
-                } else if (
-                  typeof clipboard !== "undefined" &&
-                  clipboard.readText
-                ) {
-                  text = clipboard.readText();
-                }
-                const selection = monacoEditor.getSelection();
-                monacoEditor.executeEdits("paste", [
-                  { range: selection, text, forceMoveMarkers: true },
-                ]);
-                monacoEditor.focus();
-              } catch (e) {}
-            })();
-          });
-
-          editorAPI._editor = monacoEditor;
-          editorAPI.getValue = () => monacoEditor.getValue();
-          editorAPI.setValue = (v) => monacoEditor.setValue(v);
-          editorAPI.refresh = () => monacoEditor.layout();
-          editorAPI.focus = () => monacoEditor.focus();
-          editorAPI.setSize = (w, h) => {
-            if (w)
-              editorWrapper.style.width = typeof w === "string" ? w : `${w}px`;
-            if (h)
-              editorWrapper.style.height = typeof h === "string" ? h : `${h}px`;
-            monacoEditor.layout();
-          };
-
-          setTimeout(() => monacoEditor.layout(), 0);
-
-          if (document.fonts && document.fonts.ready) {
-            document.fonts.ready.then(() => {
-              try {
-                if (monaco && monaco.editor && monaco.editor.remeasureFonts) {
-                  monaco.editor.remeasureFonts();
-                }
-                monacoEditor.layout();
-              } catch (_) {}
             });
+
+            const monacoEditor = monaco.editor.create(editorWrapper, {
+              value: content || "-- New script",
+              language: "luau",
+              theme: "tritium-dark",
+              automaticLayout: true,
+              autoIndent: "full",
+              formatOnType: true,
+              contextmenu: false,
+              lineNumbers: "on",
+              tabSize: 2,
+              insertSpaces: true,
+              wordWrap: "off",
+              matchBrackets: "always",
+              autoClosingBrackets: "languageDefined",
+              fontFamily: 'Fira Code, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+              fontLigatures: true,
+              fontSize: 15,
+              lineHeight: 22,
+              glyphMargin: false,
+              lineNumbersMinChars: 3,
+              lineDecorationsWidth: 8,
+              padding: { top: 12, bottom: 12 },
+              cursorStyle: "line",
+              cursorSmoothCaretAnimation: true,
+              cursorBlinking: "phase",
+              cursorSurroundingLines: 15,
+              minimap: { enabled: false },
+            });
+
+            editorAPI._editor = monacoEditor;
+            editorAPI.getValue = () => monacoEditor.getValue();
+            editorAPI.setValue = (v) => monacoEditor.setValue(v);
+            editorAPI.refresh = () => monacoEditor.layout();
+            editorAPI.focus = () => monacoEditor.focus();
+            editorAPI.setSize = (w, h) => {
+              if (w) editorWrapper.style.width = typeof w === "string" ? w : `${w}px`;
+              if (h) editorWrapper.style.height = typeof h === "string" ? h : `${h}px`;
+              monacoEditor.layout();
+            };
+
+            setTimeout(() => monacoEditor.layout(), 0);
+          } catch (err) {
+            console.error("Failed to initialize Monaco:", err);
           }
+        },
+      );
+    } else {
+      // Fallback to simple textarea if Monaco is not available
+      const textarea = document.createElement("textarea");
+      textarea.value = content || "-- New script";
+      textarea.style.width = "100%";
+      textarea.style.height = "100%";
+      textarea.style.background = "#1e1e1e";
+      textarea.style.color = "#e0e0e0";
+      textarea.style.border = "none";
+      textarea.style.outline = "none";
+      textarea.style.fontFamily = 'Fira Code, monospace';
+      textarea.style.fontSize = "15px";
+      textarea.style.padding = "12px";
+      editorWrapper.appendChild(textarea);
 
-          monacoEditor.addCommand(
-            monaco.KeyMod.CtrlCmd | monaco.KeyCode.Space,
-            () =>
-              monacoEditor.trigger(
-                "manual",
-                "editor.action.triggerSuggest",
-                {},
-              ),
-          );
-
-          monacoEditor.addCommand(monaco.KeyCode.F1, () => {});
-          monacoEditor.addCommand(
-            monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP,
-            () => {},
-          );
-          monacoEditor.addCommand(
-            monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP,
-            () => {},
-          );
-
-          monacoEditor.onDidChangeModelContent(() => {});
-        } catch (err) {
-          console.error("Failed to initialize Monaco:", err);
-        }
-      },
-    );
+      editorAPI.getValue = () => textarea.value;
+      editorAPI.setValue = (v) => { textarea.value = v; };
+      editorAPI.focus = () => textarea.focus();
+    }
 
     return editorAPI;
   }
 
   const api = initMonaco();
-
   editorWrapper.style.width = "100%";
   editorWrapper.style.height = "100%";
   return api;
@@ -1565,9 +836,6 @@ function updateScriptNameEverywhere(originalName, newName) {
       setLocalStorage("autoExecuteScripts", autoExecScripts);
     }
     setLocalStorage("savedScripts", savedScripts);
-    const filePath = path.join(scriptsDirectory, `${originalName}.txt`);
-    const newFilePath = path.join(scriptsDirectory, `${newName}.txt`);
-    fs.renameSync(filePath, newFilePath);
     showToast(`Script renamed to "${newName}"`);
     Array.from(tabs.children).forEach((tab) => {
       if (tab.dataset.realTabName === originalName) {
@@ -1579,75 +847,25 @@ function updateScriptNameEverywhere(originalName, newName) {
 }
 
 function loadSavedScripts() {
-  savedScripts = [];
-  try {
-    if (fs.existsSync(scriptsDirectory)) {
-      const files = fs.readdirSync(scriptsDirectory);
-      files.forEach((file) => {
-        if (file.endsWith(".txt")) {
-          const filePath = path.join(scriptsDirectory, file);
-          const content = fs.readFileSync(filePath, "utf8");
-          let scriptName = file.replace(".txt", "").split(".")[0];
-          savedScripts.push({ title: scriptName, script: content });
-        }
-      });
-    }
-  } catch (err) {
-    console.error("Error loading saved scripts:", err);
-    addLog("Error loading saved scripts: " + err.message, "error");
-  }
+  savedScripts = getLocalStorage("savedScripts", []);
 }
 
 function persistSavedScripts() {
   setLocalStorage("savedScripts", savedScripts);
 }
+
 function loadAutoExecuteScripts() {
-  let autoexecuteScriptse = getLocalStorage("autoExecuteScripts", []);
-
-  const homedir = require("os").homedir();
-  const possibleDirs = [
-    path.join(homedir, "Documents", "MacSploit Automatic Execution"),
-    path.join(homedir, "Opiumware", "autoexec"),
-    path.join(homedir, "Hydrogen", "autoexecute"),
-  ];
-
-  const targetDirs = possibleDirs.filter((d) => fs.existsSync(d));
-
-  if (targetDirs.length === 0) {
-    const def = possibleDirs[0];
-    try {
-      fs.mkdirSync(def, { recursive: true });
-      targetDirs.push(def);
-    } catch (e) {}
-  }
-  let combinedScriptContent = "";
-  console.log("Auto execute scripts:", autoexecuteScriptse);
-  autoexecuteScriptse.forEach((scriptName) => {
-    const script = savedScripts.find((s) => s.title === scriptName);
-    console.log(script);
-    if (script) {
-      combinedScriptContent += script.script + "\n\n";
-    }
-  });
-
-  targetDirs.forEach((dir) => {
-    try {
-      const filePath = path.join(dir, `autoexecute.txt`);
-      fs.writeFileSync(filePath, combinedScriptContent);
-    } catch (e) {
-      console.error("Failed to write autoexecute to", dir, e);
-    }
-  });
-
   return getLocalStorage("autoExecuteScripts", []);
 }
+
 function saveAutoExecuteScripts(scripts) {
   setLocalStorage("autoExecuteScripts", scripts);
-  loadAutoExecuteScripts();
 }
+
 function isAutoExecuteScript(scriptName) {
   return loadAutoExecuteScripts().includes(scriptName);
 }
+
 function toggleAutoExecuteScript(scriptName) {
   const autoExecScripts = loadAutoExecuteScripts();
   const index = autoExecScripts.indexOf(scriptName);
@@ -1662,6 +880,7 @@ function toggleAutoExecuteScript(scriptName) {
   updateAutoExecuteCheckbox(scriptName);
   renderSidebar();
 }
+
 function updateAutoExecuteCheckbox(scriptName) {
   autoExecuteCheckbox.style.display = isAutoExecuteScript(scriptName)
     ? "inline"
@@ -1673,6 +892,7 @@ function showContextMenu(e, scriptName) {
   currentContextScript = scriptName;
   currentContextWorkspace = null;
   contextMenu.innerHTML = "";
+  
   const renameOption = document.createElement("div");
   renameOption.className = "context-menu-item";
   renameOption.innerHTML = '<i class="fas fa-edit"></i> Rename';
@@ -1709,7 +929,6 @@ function showContextMenu(e, scriptName) {
 
 function showWorkspaceContextMenu(e, workspaceId) {
   e.preventDefault();
-
   currentContextWorkspace = workspaceId;
   currentContextScript = null;
   contextMenu.innerHTML = "";
@@ -1765,6 +984,7 @@ renameScriptBtn.addEventListener("click", () => {
   input.value = originalName;
   titleElement.replaceWith(input);
   input.focus();
+  
   function handleRename() {
     const newName = input.value.trim().split(".")[0];
     if (newName === "Untitled") {
@@ -1778,6 +998,7 @@ renameScriptBtn.addEventListener("click", () => {
     titleElement.textContent = newName || originalName;
     input.replaceWith(titleElement);
   }
+  
   input.addEventListener("blur", handleRename);
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -1800,6 +1021,7 @@ renameScriptBtn.addEventListener("click", () => {
   });
   contextMenu.classList.remove("open");
 });
+
 deleteScriptBtn.addEventListener("click", () => {
   if (!currentContextScript) return;
   if (confirm(`Are you sure you want to delete "${currentContextScript}"?`)) {
@@ -1810,37 +1032,26 @@ deleteScriptBtn.addEventListener("click", () => {
       if (isAutoExecuteScript(currentContextScript)) {
         toggleAutoExecuteScript(currentContextScript);
       }
-      const filePath = path.join(
-        scriptsDirectory,
-        `${currentContextScript}.txt`,
+      savedScripts.splice(scriptIndex, 1);
+      persistSavedScripts();
+      renderSidebar();
+      showToast(`Script "${currentContextScript}" deleted`);
+      const tabsToClose = Array.from(tabs.children).filter(
+        (tab) => tab.dataset.realTabName === currentContextScript,
       );
-      try {
-        fs.unlinkSync(filePath);
-        savedScripts.splice(scriptIndex, 1);
-        persistSavedScripts();
-        renderSidebar();
-        showToast(`Script "${currentContextScript}" deleted`);
-        const tabsToClose = Array.from(tabs.children).filter(
-          (tab) => tab.dataset.realTabName === currentContextScript,
-        );
-        tabsToClose.forEach((tab) => {
-          if (Array.from(tabs.children).length === 1) {
-            createTab();
-          }
-          closeTab(true, tab.dataset.id);
-        });
-        showToast(`Script "${currentContextScript}" deleted`);
-      } catch (err) {
-        showToast(`Error deleting script: ${err.message}`, true);
-        console.error("Error deleting script file:", err);
-      }
+      tabsToClose.forEach((tab) => {
+        if (Array.from(tabs.children).length === 1) {
+          createTab();
+        }
+        closeTab(true, tab.dataset.id);
+      });
     }
   }
 });
+
 autoExecuteScriptBtn.addEventListener("click", () => {
   if (!currentContextScript) return;
   toggleAutoExecuteScript(currentContextScript);
-
   if (sidebar.classList.contains("open")) {
     renderSidebar();
   }
@@ -2211,72 +1422,32 @@ function saveScriptContent(tab, scriptName) {
     showToast("Script name is required and cannot be 'Untitled'", true);
     return;
   }
-  if (!scriptName.endsWith(".txt")) {
-    scriptName = scriptName + ".txt";
-  }
 
   const scriptContent = editors[currentTab].getValue();
-  const filePath = path.join(scriptsDirectory, scriptName);
+  
+  // Save to localStorage instead of file system
+  const existingIndex = savedScripts.findIndex(s => s.title === scriptName);
+  if (existingIndex !== -1) {
+    savedScripts[existingIndex].script = scriptContent;
+  } else {
+    savedScripts.push({ title: scriptName, script: scriptContent });
+  }
+  
+  persistSavedScripts();
+  showToast(`Script "${scriptName}" saved successfully!`);
+  
+  closeCurrentTab(true);
+  setTimeout(() => {
+    createTab(scriptName, scriptContent);
+  }, 100);
 
-  let backupPath = null;
-  if (fs.existsSync(filePath)) {
-    backupPath = filePath + ".bak";
-    try {
-      fs.copyFileSync(filePath, backupPath);
-    } catch (err) {
-      showToast("Error creating backup: " + err.message, true);
-      return;
-    }
+  if (sidebar.classList.contains("open") && !searchBox.value) {
+    renderSidebar();
   }
 
-  const tempPath = filePath + ".tmp";
-  fs.writeFile(tempPath, scriptContent, (err) => {
-    if (err) {
-      showToast("Error saving script: " + err.message, true);
-
-      if (fs.existsSync(tempPath)) {
-        fs.unlinkSync(tempPath);
-      }
-      return;
-    }
-
-    try {
-      fs.renameSync(tempPath, filePath);
-
-      showToast(
-        `Script "${scriptName.replace(".txt", "")}" saved successfully!`,
-      );
-      closeCurrentTab(true);
-      setTimeout(() => {
-        createTab(scriptName.replace(".txt", ""), scriptContent);
-      }, 100);
-
-      if (sidebar.classList.contains("open") && !searchBox.value) {
-        renderSidebar();
-      }
-
-      if (
-        !sidebar.classList.contains("open") &&
-        typeof toggleSidebar !== "undefined"
-      ) {
-        toggleSidebar.click();
-      }
-
-      if (backupPath && fs.existsSync(backupPath)) {
-        fs.unlinkSync(backupPath);
-      }
-    } catch (err) {
-      showToast("Error finalizing save: " + err.message, true);
-
-      if (backupPath && fs.existsSync(backupPath)) {
-        try {
-          fs.renameSync(backupPath, filePath);
-        } catch (restoreErr) {
-          showToast("Error restoring from backup: " + restoreErr.message, true);
-        }
-      }
-    }
-  });
+  if (!sidebar.classList.contains("open") && typeof toggleSidebar !== "undefined") {
+    toggleSidebar.click();
+  }
 }
 
 document.getElementById("copyConsole").onclick = function () {
@@ -2286,44 +1457,12 @@ document.getElementById("copyConsole").onclick = function () {
 };
 
 function launchRoblox() {
-  let executablePath = "/Applications/Roblox.app/Contents/MacOS/RobloxPlayer";
-  const userExecutablePath =
-    "~/Applications/Roblox.app/Contents/MacOS/RobloxPlayer";
-  if (fs.existsSync(userExecutablePath)) {
-    executablePath = userExecutablePath;
-  }
-  try {
-    if (!fs.existsSync(executablePath)) {
-      showToast("Roblox executable not found", true);
-      return;
-    }
-    const child = spawn(executablePath, [], {
-      detached: true,
-      stdio: "ignore",
-    });
-    child.unref();
-  } catch (err) {
-    try {
-      const child = spawn("open", [executablePath], {
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
-    } catch (_) {
-      showToast("Failed to launch Roblox", true);
-    }
-  }
+  showToast("Roblox launch not available in browser mode", true);
 }
 
-document
-  .getElementById("roblox-button")
-  .addEventListener("click", launchRoblox);
-document
-  .getElementById("save-button")
-  .addEventListener("click", saveCurrentScript);
-document
-  .getElementById("exec-button")
-  .addEventListener("click", executeCurrentScript);
+document.getElementById("roblox-button").addEventListener("click", launchRoblox);
+document.getElementById("save-button").addEventListener("click", saveCurrentScript);
+document.getElementById("exec-button").addEventListener("click", executeCurrentScript);
 
 async function loadupdated() {
   showToast("Loading scripts...");
@@ -2439,6 +1578,7 @@ async function searchScripts(query) {
   searchingIndicator.className = "sidebar-category";
   searchingIndicator.textContent = "Searching...";
   scriptsList.appendChild(searchingIndicator);
+  
   try {
     await new Promise((resolve) => setTimeout(resolve, 500));
     if (thisSearchId !== currentSearchId) return;
@@ -2497,6 +1637,7 @@ async function searchScripts(query) {
         maxLen++;
       }
     });
+    
     for (let i = 0; i < maxLen; i++) {
       if (i < scriptbloxResults.length) {
         const item = await renderScriptItem(scriptbloxResults[i], "Scriptblox");
@@ -2542,6 +1683,7 @@ window.onload = function () {
       workspaceToggleBtn.classList.remove("active");
     }
   } catch (_) {}
+  
   loadAutoExecuteScripts();
   updatedLoaded = false;
   loadWorkspaces();
@@ -2577,6 +1719,7 @@ async function renderSidebar() {
   savedCategory.className = "sidebar-category";
   savedCategory.textContent = "Saved scripts";
   scriptsList.appendChild(savedCategory);
+  
   if (savedScripts.length === 0) {
     const item = document.createElement("div");
     item.className = "script-item saved-script disabled";
@@ -2619,10 +1762,12 @@ async function renderSidebar() {
       scriptsList.appendChild(item);
     });
   }
+  
   const updatedCategory = document.createElement("div");
   updatedCategory.className = "sidebar-category";
   updatedCategory.textContent = "Recently updated scripts";
   scriptsList.appendChild(updatedCategory);
+  
   if (!updatedLoaded) {
     loadupdated();
     updatedLoaded = true;
@@ -2666,9 +1811,7 @@ function applySettings() {
   document.body.classList.add("glow-" + glowMode);
   document.documentElement.style.setProperty("--accent-color", accentColor);
   glowModeSelect.value = glowMode;
-  if (isElectron && ipcRenderer) {
-    ipcRenderer.send("set-vibrancy", vibrancyEnabled);
-  }
+  
   vibrancyToggle.value = vibrancyEnabled ? "on" : "off";
   if (vibrancyOpacityInput) {
     vibrancyOpacityInput.value = vibrancyOpacity;
@@ -2687,43 +1830,20 @@ function applySettings() {
     "--vibrancy-opacity",
     effectiveOpacity.toString(),
   );
+  
   if (scriptHubSelect) {
     scriptHubSelect.value = scriptHub;
   }
+  
   if (executorSelect) {
-    if (isElectron && ipcRenderer) {
-      try {
-        ipcRenderer.invoke("get-executor").then((val) => {
-          if (val) executorSelect.value = val;
-
-          if (val === "Opiumware") setPortRange(8392, 8397);
-          else if (val === "Hydrogen") setPortRange(6969, 6969);
-          else setPortRange(5553, 5563);
-          try {
-            localStorage.setItem("executorType", val);
-          } catch (e) {}
-          try {
-            updatePortUIState();
-          } catch (e) {}
-        });
-      } catch (e) {
-        executorSelect.value = executor;
-        if (executor === "Opiumware") setPortRange(8392, 8397);
-        else if (executor === "Hydrogen") setPortRange(6969, 6969);
-        else setPortRange(5553, 5563);
-        try {
-          updatePortUIState();
-        } catch (err) {}
-      }
-    } else {
-      executorSelect.value = executor;
-      if (executor === "Opiumware") setPortRange(8392, 8397);
-      else if (executor === "Hydrogen") setPortRange(6969, 6969);
-      else setPortRange(5553, 5563);
-      try {
-        updatePortUIState();
-      } catch (err) {}
-    }
+    const executor = getSettings().executor;
+    executorSelect.value = executor;
+    if (executor === "Opiumware") setPortRange(8392, 8397);
+    else if (executor === "Hydrogen") setPortRange(6969, 6969);
+    else setPortRange(5553, 5563);
+    try {
+      updatePortUIState();
+    } catch (err) {}
   }
 
   const msBtn = document.getElementById("updateMacSploit");
@@ -2748,13 +1868,6 @@ function saveSettings() {
   }
   if (executorSelect) {
     localStorage.setItem("executorType", executorSelect.value);
-    if (isElectron && ipcRenderer) {
-      try {
-        ipcRenderer
-          .invoke("set-executor", executorSelect.value)
-          .catch(() => {});
-      } catch (e) {}
-    }
   }
   applySettings();
 }
@@ -2762,9 +1875,7 @@ function saveSettings() {
 vibrancyToggle.addEventListener("change", () => {
   const isEnabled = vibrancyToggle.value === "on";
   console.log("Vibrancy enabled:", isEnabled);
-  if (isElectron && ipcRenderer) {
-    ipcRenderer.send("set-vibrancy", isEnabled);
-  }
+  
   if (vibrancyOpacityInput) {
     vibrancyOpacityInput.disabled = !isEnabled;
     if (vibrancyOpacityGroup)
@@ -2804,11 +1915,12 @@ if (vibrancyOpacityInput) {
       );
     }
   };
+  
   vibrancyOpacityInput.addEventListener("input", () => {
     handleOpacity();
-
     localStorage.setItem("vibrancyOpacity", vibrancyOpacityInput.value);
   });
+  
   vibrancyOpacityInput.addEventListener("change", () => {
     saveSettings();
   });
@@ -2819,10 +1931,8 @@ glowModeSelect.addEventListener("change", saveSettings);
 if (scriptHubSelect) {
   scriptHubSelect.addEventListener("change", () => {
     saveSettings();
-
     updatedLoaded = false;
     updatedScripts = [];
-
     if (sidebar.classList.contains("open")) {
       renderSidebar();
     }
@@ -2834,13 +1944,6 @@ if (executorSelect) {
     try {
       localStorage.setItem("executorType", executorSelect.value);
     } catch (e) {}
-    if (isElectron && ipcRenderer) {
-      try {
-        ipcRenderer
-          .invoke("set-executor", executorSelect.value)
-          .catch(() => {});
-      } catch (e) {}
-    }
 
     if (executorSelect.value === "Opiumware") {
       setPortRange(8392, 8397);
@@ -2868,6 +1971,7 @@ settingsButton.addEventListener("click", () => {
   settingsPane.classList.add("open");
   applySettings();
 });
+
 settingsPane.addEventListener("click", (e) => {
   if (e.target === settingsPane) {
     settingsPane.classList.remove("open");
@@ -2881,22 +1985,6 @@ settingsPane.addEventListener("click", (e) => {
 
 document.addEventListener("DOMContentLoaded", applySettings);
 window.addEventListener("load", applySettings);
-
-const accentColorPaletteBtn = document.getElementById("accentColorPalette");
-if (accentColorPaletteBtn) {
-  function showPaletteBtnOpen() {
-    accentColorPaletteBtn.classList.add("open");
-    if (accentColorPaletteBtn._openTimeout)
-      clearTimeout(accentColorPaletteBtn._openTimeout);
-    accentColorPaletteBtn._openTimeout = setTimeout(() => {
-      accentColorPaletteBtn.classList.remove("open");
-      accentColorPaletteBtn._openTimeout = null;
-    }, 1500);
-  }
-  accentColorPaletteBtn.addEventListener("mousedown", function () {
-    showPaletteBtnOpen();
-  });
-}
 
 function openRenameDialog() {
   const renameDialog = document.getElementById("renameDialog");
@@ -2918,31 +2006,9 @@ function closeRenameDialog() {
   }, 350);
 }
 
-let fsWatcher = null;
-
+// Mock file watcher for browser environment
 function startFileWatcher() {
-  if (fsWatcher) {
-    fsWatcher.close();
-  }
-
-  try {
-    fsWatcher = fs.watch(
-      scriptsDirectory,
-      { persistent: true },
-      (eventType, filename) => {
-        if (filename && (filename.endsWith(".txt") || eventType === "rename")) {
-          console.log(`File ${filename} ${eventType}`);
-          loadSavedScripts();
-          if (sidebar.classList.contains("open")) {
-            renderSidebar();
-          }
-        }
-      },
-    );
-    console.log("File watcher started for scripts directory");
-  } catch (err) {
-    console.error("Error starting file watcher:", err);
-  }
+  console.log("File watcher not available in browser mode");
 }
 
 function createBadge(text, className) {
@@ -2969,15 +2035,7 @@ function createDiscordBadge(url) {
   badge.innerText = "Discord";
   badge.onclick = (e) => {
     e.stopPropagation();
-    if (window && window.process && window.process.type === "renderer") {
-      try {
-        require("electron").shell.openExternal(url);
-      } catch (err) {
-        window.open(url, "_blank");
-      }
-    } else {
-      window.open(url, "_blank");
-    }
+    window.open(url, "_blank");
   };
   return badge;
 }
@@ -3043,6 +2101,7 @@ async function renderScriptItem(script, source) {
       }
     } catch (e) {}
   }
+  
   const item = document.createElement("div");
   item.className = "script-item searched-script";
 
@@ -3095,6 +2154,7 @@ async function renderScriptItem(script, source) {
       meta.appendChild(discordBadge);
     }
   }
+  
   if (script.mobileReady)
     meta.appendChild(createBadge("Mobile", "script-mobile"));
   if (script.paid) meta.appendChild(createBadge("Paid", "script-paid"));
@@ -3148,47 +2208,12 @@ async function executeCurrentScript() {
   }
   const code = editors[currentTab].getValue();
   showToast("Executing: " + code.substring(0, 30) + "...");
-  if (isElectron && ipcRenderer) {
-    try {
-      if (updating) {
-        showToast("Cannot execute while updating", true);
-        return;
-      }
-      ipcRenderer.send("invokeAction", { code });
-      ipcRenderer.once("actionReply", (event, result) => {
-        console.log("Result:", result);
-        if (result.startsWith("Error:")) {
-          showToast("Failed", true);
-          showToast(result, true);
-        } else {
-          showToast("Success");
-        }
-      });
-    } catch (err) {
-      console.error("Failed to send to Electron:", err);
-      showToast("Error: " + err.message, true);
-      showToast("Error", true);
-    }
-  } else {
-    showToast("Executing: " + code.substring(0, 30) + "...");
-    setTimeout(() => {
-      showToast("Success");
-    }, 500);
-  }
+  
+  // Mock execution for browser environment
+  setTimeout(() => {
+    showToast("Script execution not available in browser mode", true);
+  }, 500);
 }
-
-window.addEventListener("DOMContentLoaded", () => {
-  const closeColorPickerBtn = document.getElementById("closeColorPicker");
-  if (closeColorPickerBtn && accentColorInput) {
-    closeColorPickerBtn.addEventListener("click", () => {
-      accentColorInput.blur();
-      accentColorInput.style.display = "none";
-      setTimeout(() => {
-        accentColorInput.style.display = "";
-      }, 200);
-    });
-  }
-});
 
 const accentColorInput = document.getElementById("accentColorInput");
 const accentColorPicker = document.getElementById("accentColorPicker");
@@ -3539,7 +2564,6 @@ window.addEventListener("DOMContentLoaded", () => {
       if (!sidebar.classList.contains("open")) {
         sidebar.classList.add("open");
         sidebarOpen = true;
-        toggleSidebar.innerHTML;
       }
     } else if (sOpen === "false") {
       if (sidebar.classList.contains("open")) {
@@ -3609,16 +2633,11 @@ window.addEventListener("DOMContentLoaded", () => {
 
 window.addEventListener("DOMContentLoaded", () => {
   try {
-    const pkg = window.require && window.require("./package.json");
-    const ver = pkg && pkg.version ? `v${pkg.version}` : null;
+    // Mock version display for browser
     const el = document.getElementById("version");
     if (el) {
-      if (ver) {
-        el.textContent = ver;
-        el.setAttribute("title", `Version ${ver}`);
-      } else {
-        el.style.display = "none";
-      }
+      el.textContent = "v4.1.2";
+      el.setAttribute("title", "Version 4.1.2");
     }
   } catch (e) {}
 });
