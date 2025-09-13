@@ -1,33 +1,34 @@
-const {
-  app,
-  BrowserWindow,
-  ipcMain,
-  globalShortcut,
-  dialog,
-  Menu,
-} = require("electron");
-const sudo = require("sudo-prompt");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const fetch = require("node-fetch");
 const chokidar = require("chokidar");
 const { version: currentVersion } = require("./package.json");
-const { nativeTheme } = require("electron");
 const { exec } = require("child_process");
 const START_PORT = 5553;
 const END_PORT = 5563;
 const net = require("net");
 const zlib = require("zlib");
-let mainWindow = null;
 let serverPort = null;
 let lastError = null;
-const localStorage = require("electron-localstorage");
-let spotlightWindow = null;
 let watcher = null;
 let currentLogPath = null;
 let filePosition = 0;
 let checkLogInterval = null;
+
+// Simple localStorage replacement for Node.js
+const localStorage = {
+  data: {},
+  getItem: function(key) {
+    return this.data[key] || null;
+  },
+  setItem: function(key, value) {
+    this.data[key] = value;
+  },
+  removeItem: function(key) {
+    delete this.data[key];
+  }
+};
 
 function findLatestLogFile() {
   const homedir = require("os").homedir();
@@ -49,7 +50,7 @@ function findLatestLogFile() {
   }
 }
 
-function switchToNewLogFile(mainWindow) {
+function switchToNewLogFile() {
   const newLogPath = findLatestLogFile();
 
   if (!newLogPath) {
@@ -74,12 +75,9 @@ function switchToNewLogFile(mainWindow) {
       filePosition = content.length;
 
       lines.forEach((line) => {
-        mainWindow.webContents.send("log-update", line);
+        console.log("LOG:", line);
       });
-      mainWindow.webContents.send(
-        "log-update",
-        "Initial log content restored " + Date.now(),
-      );
+      console.log("Initial log content restored " + Date.now());
     } catch (err) {
       console.error("Error reading initial log content:", err);
     }
@@ -109,9 +107,9 @@ function switchToNewLogFile(mainWindow) {
             .filter((line) => line.trim() !== "")
             .forEach((line) => {
               try {
-                mainWindow.webContents.send("log-update", line);
+                console.log("LOG:", line);
               } catch (err) {
-                console.error("Error sending log update to main window:", err);
+                console.error("Error sending log update:", err);
               }
             });
         });
@@ -134,11 +132,11 @@ function switchToNewLogFile(mainWindow) {
   }
 }
 
-function logstart(mainWindow) {
-  switchToNewLogFile(mainWindow);
+function logstart() {
+  switchToNewLogFile();
 
   checkLogInterval = setInterval(() => {
-    switchToNewLogFile(mainWindow);
+    switchToNewLogFile();
   }, 5000);
 
   return { success: true, path: currentLogPath };
@@ -189,30 +187,13 @@ function runMacSploitInstall() {
               fs.unlinkSync(sentinel);
             } catch (_) {}
             if (exitCode === "0") {
-              try {
-                dialog.showMessageBox(mainWindow, {
-                  type: "info",
-                  title: "MacSploit Install Complete",
-                  message: "MacSploit installation finished successfully.",
-                  buttons: ["OK"],
-                });
-              } catch (_) {}
+              console.log("MacSploit installation finished successfully.");
             } else {
-              dialog.showMessageBox(mainWindow, {
-                type: "error",
-                title: "MacSploit Install Failed",
-                message: `MacSploit installer exited with code ${exitCode}.`,
-                buttons: ["OK"],
-              });
+              console.error(`MacSploit installer exited with code ${exitCode}.`);
             }
           } else if (Date.now() - start > maxDurationMs) {
             clearInterval(interval);
-            dialog.showMessageBox(mainWindow, {
-              type: "warning",
-              title: "MacSploit Install Timeout",
-              message: "Timed out waiting for MacSploit installer to finish.",
-              buttons: ["OK"],
-            });
+            console.warn("Timed out waiting for MacSploit installer to finish.");
           }
         } catch (e) {}
       }, pollInterval);
@@ -220,48 +201,6 @@ function runMacSploitInstall() {
     });
   });
 }
-
-ipcMain.on("invokeAction", function (event, data) {
-  console.log("Received IPC message:", data);
-
-  processData(data)
-    .then((result) => {
-      event.sender.send("actionReply", result);
-    })
-    .catch((err) => {
-      event.sender.send("actionReply", `Error: ${err.message}`);
-    });
-});
-
-ipcMain.handle("start-log-watcher", async () => {
-  return logstart(mainWindow);
-});
-
-ipcMain.handle("show-save-dialog", async () => {
-  const { dialog } = require("electron");
-  return dialog.showSaveDialog({
-    title: "Save Script",
-    defaultPath: path.join(require("os").homedir(), "Documents", "Tritium"),
-    filters: [{ name: "Text Files", extensions: ["txt"] }],
-  });
-});
-
-ipcMain.handle("ms-update", async () => {
-  try {
-    const out = await runMacSploitInstall();
-    console.log("MacSploit update output:", out);
-    return { success: true };
-  } catch (err) {
-    console.error("MacSploit update failed:", err);
-    dialog.showMessageBox(mainWindow, {
-      type: "error",
-      title: "Update Failed",
-      message: `Failed to update MacSploit: ${err.message}`,
-      buttons: ["OK"],
-    });
-    return { success: false, error: err.message };
-  }
-});
 
 async function checkForUpdates() {
   try {
@@ -283,17 +222,7 @@ async function checkForUpdates() {
     const msVersion = macSploitData.relVersion;
     if (localStorage.getItem("macSploitVersion")) {
       if (localStorage.getItem("macSploitVersion") !== msVersion) {
-        const choice = await dialog.showMessageBox(mainWindow, {
-          type: "info",
-          title: "MacSploit Update Available",
-          message: `A new version of MacSploit (${msVersion}) is available!\nWould you like to update now?`,
-          buttons: ["Update", "Later"],
-          defaultId: 0,
-        });
-
-        if (choice.response === 0) {
-          await msUpdate();
-        }
+        console.log(`A new version of MacSploit (${msVersion}) is available!`);
       }
     }
 
@@ -301,17 +230,7 @@ async function checkForUpdates() {
 
     for (let i = 0; i < 3; i++) {
       if (latest[i] > current[i]) {
-        const choice = await dialog.showMessageBox(mainWindow, {
-          type: "info",
-          title: "Update Available",
-          message: `A new version of Tritium (${latestVersion}) is available!\nWould you like to update now?`,
-          buttons: ["Update", "Later"],
-          defaultId: 0,
-        });
-
-        if (choice.response === 0) {
-          await update();
-        }
+        console.log(`A new version of Tritium (${latestVersion}) is available!`);
         break;
       }
     }
@@ -326,284 +245,15 @@ async function msUpdate() {
     console.log(`MacSploit update output: ${output}`);
   } catch (error) {
     console.error("Update failed:", error);
-    dialog.showMessageBox(mainWindow, {
-      type: "error",
-      title: "Update Failed",
-      message: `Failed to update Tritium: ${error.message}`,
-      buttons: ["OK"],
-    });
   }
 }
-
-async function update() {
-  try {
-    const command =
-      "curl -fsSL https://raw.githubusercontent.com/Phantom8015/Tritium/main/install.sh | bash";
-
-    await new Promise((resolve, reject) => {
-      exec(command, (error, stdout, stderr) => {
-        if (error) {
-          console.error(`Update error: ${error.message}`);
-          dialog.showMessageBox(mainWindow, {
-            type: "error",
-            title: "Update Failed",
-            message: `Failed to update Tritium: ${error.message}`,
-            buttons: ["OK"],
-          });
-          reject(error);
-          return;
-        }
-        console.log(`Update output: ${stdout}`);
-        if (stderr) {
-          console.error(`Update stderr: ${stderr}`);
-        }
-        resolve();
-      });
-    });
-
-    await dialog.showMessageBox(mainWindow, {
-      type: "info",
-      title: "Update Complete",
-      message:
-        "Tritium has been updated successfully. The application will now restart.",
-      buttons: ["OK"],
-    });
-
-    const currentAppPath = app.getPath("exe");
-    const appDir = path.dirname(currentAppPath);
-    const newAppPath = path.join("/Applications", "Tritium.app");
-
-    const scriptPath = path.join(os.tmpdir(), "tritium_restart.sh");
-    const script = `#!/bin/bash
-sleep 2
-
-if [[ "${currentAppPath}" != "/Applications/Tritium.app"* ]]; then
-  echo "Removing old app at: ${currentAppPath}"
-  rm -rf "${appDir}"
-fi
-
-if [ -d "${newAppPath}" ]; then
-  echo "Starting new Tritium app"
-  open "${newAppPath}"
-else
-  echo "New Tritium app not found at ${newAppPath}"
-fi
-
-rm -f "${scriptPath}"
-`;
-
-    fs.writeFileSync(scriptPath, script);
-    fs.chmodSync(scriptPath, 0o755);
-
-    exec(`nohup "${scriptPath}" > /dev/null 2>&1 &`);
-
-    app.quit();
-  } catch (error) {
-    console.error("Update failed:", error);
-    dialog.showMessageBox(mainWindow, {
-      type: "error",
-      title: "Update Failed",
-      message: `Failed to update Tritium: ${error.message}`,
-      buttons: ["OK"],
-    });
-  }
-}
-
-function initializeSpotlight() {
-  spotlightWindow = new BrowserWindow({
-    width: 600,
-    height: 300,
-    frame: false,
-    backgroundColor: "#00000000",
-    vibrancy: "hud",
-    alwaysOnTop: true,
-    show: false,
-    skipTaskbar: true,
-    resizable: false,
-    center: true,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-    },
-  });
-
-  spotlightWindow.loadFile(path.join(__dirname, "spotlight.html"));
-
-  spotlightWindow.on("closed", () => {
-    spotlightWindow = null;
-  });
-
-  spotlightWindow.on("hide", () => {
-    try {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-      }
-    } catch (_) {}
-  });
-
-  spotlightWindow.on("blur", () => {
-    if (
-      spotlightWindow &&
-      !spotlightWindow.isDestroyed() &&
-      spotlightWindow.isVisible()
-    ) {
-      const devToolsWebContents =
-        spotlightWindow.webContents.devToolsWebContents;
-
-      if (!(devToolsWebContents && devToolsWebContents.isFocused())) {
-      }
-    }
-  });
-}
-
-function showSpotlight() {
-  if (!spotlightWindow || spotlightWindow.isDestroyed()) {
-    initializeSpotlight();
-  }
-
-  if (spotlightWindow.isVisible()) {
-    spotlightWindow.focus();
-  } else {
-    spotlightWindow.center();
-    spotlightWindow.show();
-    spotlightWindow.focus();
-  }
-
-  spotlightWindow.webContents.send("spotlight-shown");
-}
-
-ipcMain.handle("list-scripts", async () => {
-  const scriptsDir = path.join(os.homedir(), "Documents", "Tritium");
-  try {
-    if (!fs.existsSync(scriptsDir)) {
-      fs.mkdirSync(scriptsDir, { recursive: true });
-      return [];
-    }
-    const files = fs.readdirSync(scriptsDir);
-    return files.filter(
-      (file) =>
-        file.endsWith(".txt") &&
-        fs.statSync(path.join(scriptsDir, file)).isFile(),
-    );
-  } catch (error) {
-    console.error("Error listing scripts:", error);
-    return [];
-  }
-});
-
-ipcMain.on("hide-spotlight-window", () => {
-  if (
-    spotlightWindow &&
-    !spotlightWindow.isDestroyed() &&
-    spotlightWindow.isVisible()
-  ) {
-    spotlightWindow.hide();
-  }
-
-  try {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (typeof mainWindow.blur === "function") mainWindow.blur();
-    }
-  } catch (_) {}
-
-  spotlightWindow = null;
-});
-
-function applyDarkVibrancy(enableMain, enableSpotlight) {
-  try {
-    if (enableMain && mainWindow) mainWindow.setVibrancy("hud");
-    else if (mainWindow) mainWindow.setVibrancy(null);
-    if (enableSpotlight && spotlightWindow) spotlightWindow.setVibrancy("hud");
-    else if (spotlightWindow) spotlightWindow.setVibrancy(null);
-  } catch (_) {}
-}
-
-let _vibrancyEnabledMain = true;
-let _vibrancyEnabledSpotlight = true;
-
-ipcMain.on("set-vibrancy", (event, enableVibrancy) => {
-  _vibrancyEnabledMain = !!enableVibrancy;
-  applyDarkVibrancy(_vibrancyEnabledMain, _vibrancyEnabledSpotlight);
-});
-
-ipcMain.on("set-spvibrancy", (event, enableVibrancy) => {
-  _vibrancyEnabledSpotlight = !!enableVibrancy;
-  applyDarkVibrancy(_vibrancyEnabledMain, _vibrancyEnabledSpotlight);
-});
 
 const EXECUTOR_KEY = "executorType";
 if (!localStorage.getItem(EXECUTOR_KEY)) {
   localStorage.setItem(EXECUTOR_KEY, "MacSploit");
 }
 
-const executorConfigPath = path.join(app.getPath("userData"), "executor.json");
-
-function readExecutorFromFile() {
-  try {
-    if (fs.existsSync(executorConfigPath)) {
-      const raw = fs.readFileSync(executorConfigPath, "utf8");
-      const obj = JSON.parse(raw);
-      if (obj && obj.executor) return obj.executor;
-    }
-  } catch (e) {
-    console.warn("Failed to read executor config:", e.message);
-  }
-  return null;
-}
-
-function writeExecutorToFile(value) {
-  try {
-    fs.writeFileSync(
-      executorConfigPath,
-      JSON.stringify({ executor: value }),
-      "utf8",
-    );
-  } catch (e) {
-    console.warn("Failed to write executor config:", e.message);
-  }
-}
-
-let _executorType =
-  readExecutorFromFile() || localStorage.getItem(EXECUTOR_KEY) || "MacSploit";
-
-ipcMain.handle("get-executor", async () => {
-  return _executorType || "MacSploit";
-});
-
-ipcMain.handle("set-executor", async (event, value) => {
-  if (value !== "MacSploit" && value !== "Opiumware" && value !== "Hydrogen") {
-    throw new Error("Invalid executor");
-  }
-  _executorType = value;
-  try {
-    localStorage.setItem(EXECUTOR_KEY, value);
-  } catch (e) {}
-
-  try {
-    writeExecutorToFile(value);
-  } catch (e) {}
-  return { success: true };
-});
-
-ipcMain.on("vibrancy-opacity-changed", (event, value) => {
-  try {
-    if (spotlightWindow && !spotlightWindow.isDestroyed()) {
-      spotlightWindow.webContents.send("apply-vibrancy-opacity", value);
-    }
-  } catch (_) {}
-});
-
-ipcMain.on("set-spotlight-size", (event, size) => {
-  try {
-    if (spotlightWindow && !spotlightWindow.isDestroyed()) {
-      const w = parseInt(size && size.width, 10) || 600;
-      const h = parseInt(size && size.height, 10) || 300;
-      spotlightWindow.setSize(w, h);
-      spotlightWindow.center();
-    }
-  } catch (e) {
-    console.error("Failed to set spotlight size:", e);
-  }
-});
+let _executorType = localStorage.getItem(EXECUTOR_KEY) || "MacSploit";
 
 async function ligma(scriptContent) {
   const executor = _executorType || "MacSploit";
@@ -744,146 +394,30 @@ function processData(data) {
   return ligma(code).catch((err) => console.log(err));
 }
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    resizable: true,
-    minWidth: 1290,
-    minHeight: 640,
-    width: 1450,
-    height: 760,
+// Start the application
+console.log("Tritium started");
+checkForUpdates();
+logstart();
 
-    vibrancy: "hud",
-    visualEffectState: "active",
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      devTools: !app.isPackaged,
-    },
-    titleBarStyle: "hidden",
-    trafficLightPosition: { x: 27, y: 24 },
-    icon: __dirname + "./icon.png",
-    title: "Tritium",
-  });
-  mainWindow.setMenuBarVisibility(false);
-
-  try {
-    const template = [
-      {
-        label: app.name,
-        submenu: [
-          { role: "about" },
-          { type: "separator" },
-          { role: "services" },
-          { type: "separator" },
-          { role: "hide" },
-          { role: "hideOthers" },
-          { role: "unhide" },
-          { type: "separator" },
-          { role: "quit" },
-        ],
-      },
-      {
-        label: "Edit",
-        submenu: [
-          { role: "undo" },
-          { role: "redo" },
-          { type: "separator" },
-          { role: "cut" },
-          { role: "copy" },
-          { role: "paste" },
-          { role: "pasteAndMatchStyle" },
-          { role: "delete" },
-          { role: "selectAll" },
-        ],
-      },
-      {
-        label: "View",
-        submenu: [
-          { role: "reload" },
-          { role: "forceReload" },
-          { role: "toggleDevTools" },
-          { type: "separator" },
-          { role: "resetZoom" },
-          { role: "zoomIn" },
-          { role: "zoomOut" },
-          { type: "separator" },
-          { role: "togglefullscreen" },
-        ],
-      },
-    ];
-    const menu = Menu.buildFromTemplate(template);
-    Menu.setApplicationMenu(menu);
-  } catch (e) {
-    console.warn("Failed to set application menu:", e);
-  }
-
-  mainWindow.webContents.on("before-input-event", (event, input) => {
-    if (
-      input.control &&
-      input.shift &&
-      input.key.toLowerCase() === "arrowleft"
-    ) {
-      mainWindow.webContents.goBack();
-    } else if (
-      input.control &&
-      input.shift &&
-      input.key.toLowerCase() === "arrowright"
-    ) {
-      mainWindow.webContents.goForward();
-    }
-  });
-
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    mainWindow.loadFile("./index.html");
-    return { action: "deny" };
-  });
-
-  mainWindow.loadFile("./index.html");
-}
-
-app.whenReady().then(() => {
-  try {
-    if (nativeTheme.themeSource !== "dark") nativeTheme.themeSource = "dark";
-  } catch (_) {}
-
-  createWindow();
-  initializeSpotlight();
-  checkForUpdates();
-
-  try {
-    nativeTheme.on("updated", () => {
-      try {
-        if (nativeTheme.themeSource !== "dark")
-          nativeTheme.themeSource = "dark";
-      } catch (_) {}
-      applyDarkVibrancy(_vibrancyEnabledMain, _vibrancyEnabledSpotlight);
-    });
-  } catch (_) {}
-
-  applyDarkVibrancy(_vibrancyEnabledMain, _vibrancyEnabledSpotlight);
-
-  try {
-    globalShortcut.register("Option+.", () => {
-      showSpotlight();
-    });
-  } catch (e) {
-    console.error('Failed to register global shortcut "Option+.":', e);
-  }
-
-  if (process.platform === "darwin") {
-    app.dock.setMenu(
-      require("electron").Menu.buildFromTemplate([
-        {
-          label: "New Window",
-          click: () => {
-            createWindow();
-          },
-        },
-      ]),
-    );
-  }
+// Simple command line interface
+const readline = require('readline');
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
 });
 
-app.on("will-quit", () => {
-  globalShortcut.unregisterAll();
+console.log("Enter 'execute <script>' to run a script, or 'quit' to exit:");
+
+rl.on('line', (input) => {
+  const trimmed = input.trim();
+  if (trimmed === 'quit') {
+    logend();
+    rl.close();
+    process.exit(0);
+  } else if (trimmed.startsWith('execute ')) {
+    const script = trimmed.substring(8);
+    processData(script);
+  } else {
+    console.log("Unknown command. Use 'execute <script>' or 'quit'");
+  }
 });

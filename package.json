@@ -5,18 +5,14 @@
   "author": "phantom8015",
   "dependencies": {
     "chokidar": "^4.0.3",
-    "electron-localstorage": "^1.0.5",
     "net": "^1.0.2",
     "node-fetch": "^2.7.0",
     "sudo-prompt": "^9.2.1"
   },
   "scripts": {
-    "start": "electron .",
+    "start": "node index.js",
     "build": "sudo ./build.sh",
     "pretty": "prettier --write \"./*.{js,css,html}\""
-  },
-  "devDependencies": {
-    "electron": "^29.0.0"
   },
   "build": {
     "asar": true,
