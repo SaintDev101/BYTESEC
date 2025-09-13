@@ -16,6 +16,7 @@
     "pretty": "prettier --write \"./*.{js,css,html}\""
   },
   "devDependencies": {
+    "electron": "^29.0.0"
   },
   "build": {
     "asar": true,
