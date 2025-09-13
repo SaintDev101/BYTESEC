@@ -11,10 +11,6 @@ const net = require("net");
 const zlib = require("zlib");
 let serverPort = null;
 let lastError = null;
-let watcher = null;
-let currentLogPath = null;
-let filePosition = 0;
-let checkLogInterval = null;
 
 // Simple localStorage replacement for Node.js
 const localStorage = {
@@ -29,155 +25,6 @@ const localStorage = {
     delete this.data[key];
   }
 };
-
-function findLatestLogFile() {
-  const homedir = require("os").homedir();
-  let logDir;
-  
-  // Determine log directory based on operating system
-  switch (os.platform()) {
-    case 'darwin': // macOS
-      // Check if we're actually on a Linux-like system despite os.platform() reporting 'darwin'
-      if (homedir === '/home' || homedir.startsWith('/home/')) {
-        logDir = path.join(homedir, ".local", "share", "Roblox", "logs");
-      } else {
-        logDir = path.join(homedir, "Library", "Logs", "Roblox");
-      }
-      break;
-    case 'win32': // Windows
-      logDir = path.join(homedir, "AppData", "Local", "Roblox", "logs");
-      break;
-    case 'linux': // Linux
-      logDir = path.join(homedir, ".local", "share", "Roblox", "logs");
-      break;
-    default:
-      console.log(`Unsupported platform: ${os.platform()}`);
-      return null;
-  }
-  
-  try {
-    // Check if directory exists before trying to read it
-    if (!fs.existsSync(logDir)) {
-      console.log(`Roblox log directory not found: ${logDir}`);
-      return null;
-    }
-    
-    const files = fs
-      .readdirSync(logDir)
-      .filter((file) => file.endsWith(".log"))
-      .map((file) => ({
-        path: path.join(logDir, file),
-        mtime: fs.statSync(path.join(logDir, file)).mtime,
-      }))
-      .sort((a, b) => b.mtime - a.mtime);
-
-    return files.length > 0 ? files[0].path : null;
-  } catch (err) {
-    console.log(`Roblox log directory not accessible: ${logDir}`);
-    return null;
-  }
-}
-
-function switchToNewLogFile() {
-  const newLogPath = findLatestLogFile();
-
-  if (!newLogPath) {
-    console.log("No log file found");
-    return;
-  }
-
-  if (newLogPath !== currentLogPath) {
-    console.log(`Switching to new log file: ${newLogPath}`);
-
-    filePosition = 0;
-
-    if (watcher) {
-      watcher.close();
-    }
-
-    currentLogPath = newLogPath;
-
-    try {
-      const content = fs.readFileSync(currentLogPath, "utf8");
-      const lines = content.split("\n").filter((line) => line.trim() !== "");
-      filePosition = content.length;
-
-      lines.forEach((line) => {
-        console.log("LOG:", line);
-      });
-      console.log("Initial log content restored " + Date.now());
-    } catch (err) {
-      console.error("Error reading initial log content:", err);
-    }
-    watcher = chokidar.watch(currentLogPath, {
-      persistent: true,
-      ignoreInitial: true,
-    });
-
-    watcher.on("change", () => {
-      try {
-        const stats = fs.statSync(currentLogPath);
-        if (stats.size < filePosition) {
-          filePosition = 0;
-        }
-
-        const stream = fs.createReadStream(currentLogPath, {
-          encoding: "utf8",
-          start: filePosition,
-        });
-
-        let remaining = "";
-        stream.on("data", (data) => {
-          const lines = (remaining + data).split("\n");
-          remaining = lines.pop();
-
-          lines
-            .filter((line) => line.trim() !== "")
-            .forEach((line) => {
-              try {
-                console.log("LOG:", line);
-              } catch (err) {
-                console.error("Error sending log update:", err);
-              }
-            });
-        });
-
-        stream.on("end", () => {
-          filePosition = stats.size;
-        });
-
-        stream.on("error", (err) => {
-          console.error("Error reading log file:", err);
-        });
-      } catch (err) {
-        console.error("Error handling log change:", err);
-      }
-    });
-
-    watcher.on("error", (err) => {
-      console.error("Log watcher error:", err);
-    });
-  }
-}
-
-function logstart() {
-  switchToNewLogFile();
-
-  checkLogInterval = setInterval(() => {
-    switchToNewLogFile();
-  }, 5000);
-
-  return { success: true, path: currentLogPath };
-}
-
-function logend() {
-  if (watcher) {
-    watcher.close();
-  }
-  if (checkLogInterval) {
-    clearInterval(checkLogInterval);
-  }
-}
 
 function runMacSploitInstall() {
   return new Promise((resolve, reject) => {
@@ -425,7 +272,6 @@ function processData(data) {
 // Start the application
 console.log("Tritium started");
 checkForUpdates();
-logstart();
 
 // Simple command line interface
 const readline = require('readline');
@@ -439,7 +285,6 @@ console.log("Enter 'execute <script>' to run a script, or 'quit' to exit:");
 rl.on('line', (input) => {
   const trimmed = input.trim();
   if (trimmed === 'quit') {
-    logend();
     rl.close();
     process.exit(0);
   } else if (trimmed.startsWith('execute ')) {
