@@ -2,7 +2,6 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const fetch = require("node-fetch");
-const chokidar = require("chokidar");
 const { version: currentVersion } = require("./package.json");
 const { exec } = require("child_process");
 const START_PORT = 5553;
