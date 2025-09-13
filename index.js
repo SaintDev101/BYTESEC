@@ -32,13 +32,17 @@ const localStorage = {
 
 function findLatestLogFile() {
   const homedir = require("os").homedir();
-  const os = require("os");
   let logDir;
   
   // Determine log directory based on operating system
   switch (os.platform()) {
     case 'darwin': // macOS
-      logDir = path.join(homedir, "Library", "Logs", "Roblox");
+      // Check if we're actually on a Linux-like system despite os.platform() reporting 'darwin'
+      if (homedir === '/home' || homedir.startsWith('/home/')) {
+        logDir = path.join(homedir, ".local", "share", "Roblox", "logs");
+      } else {
+        logDir = path.join(homedir, "Library", "Logs", "Roblox");
+      }
       break;
     case 'win32': // Windows
       logDir = path.join(homedir, "AppData", "Local", "Roblox", "logs");
