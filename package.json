@@ -1,0 +1,37 @@
+{
+  "name": "Tritium",
+  "version": "4.1.2",
+  "description": "MacSploit custom ui",
+  "author": "phantom8015",
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "electron-localstorage": "^1.0.5",
+    "net": "^1.0.2",
+    "node-fetch": "^2.7.0",
+    "sudo-prompt": "^9.2.1"
+  },
+  "scripts": {
+    "start": "electron .",
+    "build": "sudo ./build.sh",
+    "pretty": "prettier --write \"./*.{js,css,html}\""
+  },
+  "devDependencies": {
+    "electron": "^29.4.6"
+  },
+  "build": {
+    "asar": true,
+    "files": [
+      "index.html",
+      "index.js",
+      "main.js",
+      "spotlight.html",
+      "style.css",
+      "package.json",
+      "!./build.sh",
+      "!afterpack.js"
+    ],
+    "extraResources": [],
+    "extraFiles": [],
+    "afterPack": "../afterpack.js"
+  }
+}
